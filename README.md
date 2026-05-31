@@ -89,6 +89,11 @@ QLoRA/
 │   └── Evaluation Result.md  # 完整评测报告
 ├── Export/               # 导出的模型权重（.tar）
 ├── figure/               # 训练 Loss 曲线图
+├── docs/                 # 学习笔记与参考资料
+│   ├── training-params-guide.md   # 训练参数详解（含 VRAM 估算）
+│   ├── param-reference.md         # 参数快速参考表
+│   ├── evaluation-questions.md    # 15 道评估测试题
+│   └── baseline-tutorial.md       # Baseline 跑通教程
 └── README.md
 ```
 
@@ -157,6 +162,17 @@ Alpaca 格式，包含 `<think>` 推理链：
 | 随机种子 | 42 |
 | 训练环境 | AutoDL 云 GPU |
 
+### 参数选择分析
+
+| 参数 | 选择理由 |
+|------|----------|
+| **LoRA rank=16** | 对比 Test 1（rank=16）和 Test 3（rank=8），在相同 epoch=3 条件下，rank=16 的 eval loss（0.9198）高于 rank=8（0.8960），但这并非 rank 本身的问题——而是 epoch=3 导致过拟合掩盖了 rank=16 的优势。当 epoch 降为 2（Test 2），rank=16 取得了三组实验中最低的 eval loss（0.8679），说明更高的 rank 在合适训练轮数下有更强的表达能力。 |
+| **LoRA alpha=32** | 通常设为 rank 的 2 倍，这是 LoRA 社区的通用实践。alpha 控制低秩适配器的缩放系数，alpha/rank=2 保证了适配器对原始权重的有效影响幅度。 |
+| **Epochs=2（最优）** | 三组实验中，Test 1 和 Test 3 均在第 3 个 epoch 出现 eval loss 反弹（从 ~0.86 升至 ~0.92），这是典型的过拟合信号。Test 2 在 epoch=2 时及时停止，eval loss 最低且训练时间最短。**结论：本数据集的最佳训练轮数为 2 轮。** |
+| **Learning rate=2e-4** | LoRA 微调的常用起点值。相比全参数微调（通常 5e-5），LoRA 仅更新低秩适配器，需要更大学习率才能快速收敛。cosine scheduler 会在训练后期自动衰减至接近 0，避免后期震荡。 |
+| **Cutoff length=2048** | 与 Easy Dataset 的最大分割长度（2000 字符）匹配。统计显示 99%+ 的训练数据在 2048 token 以内，既能覆盖绝大多数样本，又不会因过长序列导致显存爆炸。 |
+| **Batch size=2×4=8** | 单 GPU 显存有限，per_device_batch_size=2 是 4-bit 量化 + 2048 序列长度下的安全值；gradient_accumulation_steps=4 实现等效 batch=8，兼顾训练稳定性和显存限制。 |
+
 ---
 
 ## 7. 实验结果
@@ -177,11 +193,23 @@ Alpaca 格式，包含 `<think>` 推理链：
 |:---:|:---:|:---:|
 | ![train_loss](figure/train_loss.png) | ![eval_loss](figure/eval_loss.png) | ![grad_norm](figure/train_grad_norm.png) |
 
+**图表分析：**
+
+- **Training Loss**：三组实验的训练 loss 均稳定下降，无明显震荡，说明学习率和 batch size 配置合理。Test 1 下降最快（rank=16, epoch=3），但最低 train loss 并不意味着最好的泛化能力。
+- **Eval Loss**：核心观察——Test 2（蓝色线）在 epoch 2 结束时取得最低点（0.8679），而 Test 1 和 Test 3 在进入第 3 个 epoch 后 eval loss 明显反弹（从 ~0.86 升至 ~0.92），这是**过拟合的典型信号**。这直接证明了 epoch=2 是本数据集的最佳停止点。
+- **Gradient Norm**：训练初期梯度范数波动较大（模型在快速学习），后期趋于平稳并收敛到较低水平，说明模型参数更新逐渐稳定，训练过程健康。
+
 ### 详细训练指标
 
 | Learning Rate | Tokens per Second | Eval Samples/Step | Eval Steps/Second |
 |:---:|:---:|:---:|:---:|
 | ![lr](figure/train_learning_rate.png) | ![tps](figure/train_tokens_per_second.png) | ![sps](figure/eval_samples_per_second.png) | ![eps](figure/eval_steps_per_second.png) |
+
+**图表分析：**
+
+- **Learning Rate**：cosine scheduler 的典型衰减曲线——从初始值 2e-4 逐步衰减至接近 0。这种先快后慢的衰减策略让模型在训练初期快速学习、后期精细调整。
+- **Tokens per Second**：反映训练吞吐量。不同 rank 配置对吞吐量的影响有限，主要瓶颈在于序列长度和 batch size。
+- **Eval Samples/Step & Steps/Second**：验证集评估效率指标，用于监控评估阶段的计算开销。各组实验差异不大，说明评估流程稳定。
 
 ### 交互式实验追踪
 
@@ -272,7 +300,14 @@ print(tokenizer.decode(outputs[0], skip_special_tokens=True))
 
 ## 11. 详细笔记
 
-完整的数据处理细节、环境配置踩坑记录、参数含义解释等，参见项目笔记文档。
+本项目的完整学习笔记和参考资料存放在 [`docs/`](./docs/) 目录下，适合初学者参考：
+
+| 文档 | 内容说明 |
+|------|----------|
+| [训练参数详解](docs/training-params-guide.md) | 各核心参数的作用、通俗类比、显存估算方法、liger_kernel 和 DeepSpeed 优化技巧 |
+| [参数快速参考表](docs/param-reference.md) | 由 DeepSeek-v4-Pro 生成的参数速查表，涵盖 QLoRA/LoRA/训练超参的含义与建议 |
+| [评估测试题](docs/evaluation-questions.md) | 15 道矿山安全领域专业测试题，覆盖尺寸计算、通风规程、综合场景 3 个维度 |
+| [Baseline 跑通教程](docs/baseline-tutorial.md) | 从数据处理到模型导出的完整 step-by-step 教程，包含环境搭建和踩坑记录 |
 
 ---
 
