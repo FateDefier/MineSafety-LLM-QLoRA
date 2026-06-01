@@ -43,7 +43,7 @@
 ## 3. 方法流程
 
 ```mermaid
-graph LR
+graph TB
     subgraph 数据收集
         A[PDF 规程文档] --> B[MinerU 转 Markdown]
         B --> C[Easy Dataset 生成 QA]
