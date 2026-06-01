@@ -42,25 +42,7 @@
 
 ## 3. 方法流程
 
-```mermaid
-graph TB
-    subgraph 数据收集
-        A[PDF 规程文档] --> B[MinerU 转 Markdown]
-        B --> C[Easy Dataset 生成 QA]
-        C --> D[AI 质量评估+过滤]
-    end
-    subgraph 训练
-        E[AutoDL 云 GPU] --> F[QLoRA 4-bit 训练]
-        F --> G[Loss 曲线分析]
-        G --> H[模型导出]
-    end
-    subgraph 评估
-        I[15 道专业测试题] --> J[GPT-5.5 盲评]
-        J --> K[5 维度评分]
-    end
-    D --> E
-    H --> I
-```
+![方法流程](figure/methodology.png)
 
 **工具链接：**
 | 工具 | 用途 | 链接 |
