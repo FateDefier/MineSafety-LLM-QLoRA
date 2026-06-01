@@ -173,6 +173,8 @@ Alpaca 格式，包含 `<think>` 推理链：
 | **Cutoff length=2048** | 与 Easy Dataset 的最大分割长度（2000 字符）匹配。统计显示 99%+ 的训练数据在 2048 token 以内，既能覆盖绝大多数样本，又不会因过长序列导致显存爆炸。 |
 | **Batch size=2×4=8** | 单 GPU 显存有限，per_device_batch_size=2 是 4-bit 量化 + 2048 序列长度下的安全值；gradient_accumulation_steps=4 实现等效 batch=8，兼顾训练稳定性和显存限制。 |
 
+> 完整训练配置：[Test 1](Config%20and%20Index/test1-config.csv) | [Test 2](Config%20and%20Index/test2-config.csv) | [Test 3](Config%20and%20Index/test3-config.csv)
+
 ---
 
 ## 7. 实验结果
@@ -199,6 +201,8 @@ Alpaca 格式，包含 `<think>` 推理链：
 - **Eval Loss**：核心观察——Test 2（蓝色线）在 epoch 2 结束时取得最低点（0.8679），而 Test 1 和 Test 3 在进入第 3 个 epoch 后 eval loss 明显反弹（从 ~0.86 升至 ~0.92），这是**过拟合的典型信号**。这直接证明了 epoch=2 是本数据集的最佳停止点。
 - **Gradient Norm**：训练初期梯度范数波动较大（模型在快速学习），后期趋于平稳并收敛到较低水平，说明模型参数更新逐渐稳定，训练过程健康。
 
+> 完整训练指标：[Test 1](Config%20and%20Index/test1-index.csv) | [Test 2](Config%20and%20Index/test2-index.csv) | [Test 3](Config%20and%20Index/test3-index.csv)
+
 ### 详细训练指标
 
 | Learning Rate | Tokens per Second | Eval Samples/Step | Eval Steps/Second |
@@ -210,6 +214,8 @@ Alpaca 格式，包含 `<think>` 推理链：
 - **Learning Rate**：cosine scheduler 的典型衰减曲线——从初始值 2e-4 逐步衰减至接近 0。这种先快后慢的衰减策略让模型在训练初期快速学习、后期精细调整。
 - **Tokens per Second**：反映训练吞吐量。不同 rank 配置对吞吐量的影响有限，主要瓶颈在于序列长度和 batch size。
 - **Eval Samples/Step & Steps/Second**：验证集评估效率指标，用于监控评估阶段的计算开销。各组实验差异不大，说明评估流程稳定。
+
+> 完整训练指标：[Test 1](Config%20and%20Index/test1-index.csv) | [Test 2](Config%20and%20Index/test2-index.csv) | [Test 3](Config%20and%20Index/test3-index.csv)
 
 ### 交互式实验追踪
 
@@ -243,7 +249,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 **整体结论**：微调后模型 (Answer2) 略优于原模型 (Answer1)，在更多题目中避免了明显错误的计算和矛盾尺寸。但两者都不能直接用于真实矿山安全生产场景，必须经规程原文复核后才能使用。
 
-> 完整评测报告见 [Evaluation/Evaluation Result.md](./Evaluation/Evaluation%20Result.md)
+> 15 道题逐题评测汇总见 [评测汇总表格](./Evaluation/Evaluation%20Result.md#评测汇总)，完整评测报告见 [Evaluation/Evaluation Result.md](./Evaluation/Evaluation%20Result.md)
 
 ---
 
@@ -252,7 +258,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 ### 环境要求
 
 ```bash
-pip install transformers torch peft bitsandbytes
+pip install transformers>=5.6.0 torch peft>=0.18.1 bitsandbytes
 ```
 
 ### 加载模型
