@@ -42,18 +42,24 @@
 
 ## 3. 方法流程
 
-```
-数据收集                   训练                    评估
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────┐
-│ PDF 规程文档      │   │ AutoDL 云 GPU     │   │ 15 道专业测试题    │
-│       ↓          │   │       ↓           │   │       ↓           │
-│ MinerU 转 Markdown│   │ QLoRA 4-bit 训练  │   │ GPT-5.5 盲评      │
-│       ↓          │   │       ↓           │   │       ↓           │
-│ Easy Dataset     │   │ Loss 曲线分析     │   │ 5 维度评分         │
-│ 自动生成 QA       │   │       ↓           │   │       ↓           │
-│       ↓          │   │ 模型导出          │   │ 结论分析           │
-│ AI 质量评估+过滤   │   └──────────────────┘   └──────────────────┘
-└─────────────────┘
+```mermaid
+graph LR
+    subgraph 数据收集
+        A[PDF 规程文档] --> B[MinerU 转 Markdown]
+        B --> C[Easy Dataset 生成 QA]
+        C --> D[AI 质量评估+过滤]
+    end
+    subgraph 训练
+        E[AutoDL 云 GPU] --> F[QLoRA 4-bit 训练]
+        F --> G[Loss 曲线分析]
+        G --> H[模型导出]
+    end
+    subgraph 评估
+        I[15 道专业测试题] --> J[GPT-5.5 盲评]
+        J --> K[5 维度评分]
+    end
+    D --> E
+    H --> I
 ```
 
 **工具链接：**
@@ -168,12 +174,19 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 | 参数 | 选择理由 |
 |------|----------|
-| LoRA rank=16 | Test 1（r16, e3）和 Test 3（r8, e3）对比，同样跑 3 个 epoch，rank=16 的 eval loss 反而更高（0.9198 vs 0.8960）。但这不是 rank 的问题——是 epoch=3 过拟合把 rank=16 的优势吃掉了。把 epoch 降到 2（Test 2），rank=16 拿到了三组最低的 eval loss（0.8679）。 |
+| **4-bit NF4 + 双重量化** | NF4（NormalFloat4）是 QLoRA 论文提出的量化格式，针对正态分布权重设计，比普通 INT4 更省精度。双重量化对量化常数本身再做一次 8-bit 量化，进一步压缩显存。 |
+| LoRA rank=16 | Test 1（r16, e3）和 Test 3（r8, e3）对比，同样跑 3 个 epoch，rank=16 的 eval loss 反而更高（0.9198 vs 0.8960）。但这不是 rank 的问题——是 epoch=3 过拟合把 rank=16 的优势吃掉了。把 epoch 降到 2（Test 2），**rank=16 拿到了三组最低的 eval loss（0.8679）**。 |
 | LoRA alpha=32 | 设为 rank 的 2 倍，LoRA 社区的通用做法。 |
-| Epochs=2（最优） | Test 1 和 Test 3 都在第 3 个 epoch 出现 eval loss 反弹（~0.86 → ~0.92），过拟合信号很明显。Test 2 在 epoch=2 停下来，loss 最低，训练时间也最短。 |
+| LoRA dropout=0.1 | 防过拟合。0.1 是常用值，太大会拖慢收敛。 |
+| **Target modules（7 个）** | 默认只加 q_proj/v_proj，本项目加上了 k_proj/o_proj/gate_proj/up_proj/down_proj，**覆盖所有线性层**。QLoRA 论文实验表明，对所有线性层施加 LoRA 比只加 attention 投影效果更好，rank 可以更低。 |
+| Epochs=2（最优） | Test 1 和 Test 3 都在第 3 个 epoch 出现 eval loss 反弹（~0.86 → ~0.92），过拟合信号很明显。**Test 2 在 epoch=2 停下来，loss 最低，训练时间也最短。** |
 | Learning rate=2e-4 | LoRA 只更新低秩适配器，比全参数微调需要更大学习率。2e-4 是常见起点，cosine scheduler 后期会自动衰减到接近 0。 |
+| Cosine LR scheduler | 先快后慢衰减，比线性衰减更平滑。 |
+| Optimizer=AdamW | LoRA 微调的默认选择，weight decay 正则化配合 dropout 一起防过拟合。 |
+| bf16=True | 混合精度训练，bf16 比 fp16 的数值范围更大（不容易溢出），在 Ampere 及以上 GPU 上效率和 fp16 相当。 |
 | Cutoff length=2048 | 和 Easy Dataset 的最大分块长度（2000 字符）对齐。99%+ 的训练数据在 2048 token 以内。 |
 | Batch size=2×4=8 | 单 GPU 显存有限，per_device_batch_size=2 是 4-bit 量化下的安全值，gradient_accumulation=4 凑成等效 batch=8。 |
+| 随机种子=42 | 保证实验可复现，三组实验用同一个种子。 |
 
 > 完整训练配置：[Test 1](Config%20and%20Index/test1-config.csv) | [Test 2](Config%20and%20Index/test2-config.csv) | [Test 3](Config%20and%20Index/test3-config.csv)
 
@@ -183,13 +196,13 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 ### 三组实验对比
 
-| 实验 | LoRA Rank | Alpha | Epochs | Eval Loss | 训练时长 | Adapter 权重 |
+| 实验 | LoRA Rank | Alpha | Epochs | Eval Loss | 训练时长 | Hugging Face |
 |------|-----------|-------|--------|-----------|---------|-------------|
-| Test 1 | 16 | 32 | 3 | 0.9198 | ~83 min | [HF](https://huggingface.co/FateDefier/Qwen2.5-7B-Instruct-LoRA-r16-e3) |
-| **Test 2** | **16** | **32** | **2** | **0.8679** | **~64 min** | [HF](https://huggingface.co/FateDefier/Qwen2.5-7B-Instruct-LoRA-r16-e2) |
-| Test 3 | 8 | 16 | 3 | 0.8960 | ~95 min | [HF](https://huggingface.co/FateDefier/Qwen2.5-7B-Instruct-LoRA-r8-e3) |
+| Test 1 | 16 | 32 | 3 | 0.9198 | ~83 min | [链接](https://huggingface.co/FateDefier/Qwen2.5-7B-Instruct-LoRA-r16-e3) |
+| **Test 2** | **16** | **32** | **2** | **0.8679** | **~64 min** | [链接](https://huggingface.co/FateDefier/Qwen2.5-7B-Instruct-LoRA-r16-e2) |
+| Test 3 | 8 | 16 | 3 | 0.8960 | ~95 min | [链接](https://huggingface.co/FateDefier/Qwen2.5-7B-Instruct-LoRA-r8-e3) |
 
-**结论**：Test 2（rank=16, epoch=2）eval loss 最低，训练时间也最短。跑 3 个 epoch 的两组都出现了过拟合。
+**结论**：**Test 2（rank=16, epoch=2）eval loss 最低，训练时间也最短**。跑 3 个 epoch 的两组都出现了过拟合。
 
 ### Loss 曲线
 
@@ -199,8 +212,8 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 **图表分析：**
 
-- Training Loss：三组都稳定下降，没震荡，说明 lr 和 batch size 没问题。Test 1 下降最快但 eval loss 不是最优——train loss 低不代表泛化好。
-- Eval Loss：Test 2（蓝线）在 epoch 2 结束时最低（0.8679）。Test 1 和 Test 3 进入第 3 个 epoch 后 loss 从 ~0.86 反弹到 ~0.92，过拟合了。epoch=2 是本数据集的最佳停止点。
+- Training Loss：三组都稳定下降，没震荡，说明 lr 和 batch size 没问题。Test 1 下降最快但 eval loss 不是最优——**train loss 低不代表泛化好**。
+- Eval Loss：**Test 2（蓝线）在 epoch 2 结束时最低（0.8679）**。Test 1 和 Test 3 进入第 3 个 epoch 后 loss 从 ~0.86 反弹到 ~0.92，过拟合了。**epoch=2 是本数据集的最佳停止点**。
 - Gradient Norm：初期波动大（模型在快速学习），后期收敛到较低水平，训练过程正常。
 
 > 完整训练指标：[Test 1](Config%20and%20Index/test1-index.csv) | [Test 2](Config%20and%20Index/test2-index.csv) | [Test 3](Config%20and%20Index/test3-index.csv)
@@ -229,7 +242,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 ### 测试题设计
 
-15 道测试题覆盖 3 个维度：
+15 道测试题由 **Gemini-3.5-Flash** 根据 Markdown 规程文档自动生成，覆盖 3 个维度：
 
 | 类别 | 题目数 | 考察能力 |
 |------|--------|---------|
@@ -249,7 +262,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 | 综合场景 | 覆盖面广，框架完整 | 偏简略但更安全 |
 | 主要风险 | "看似详细但夹杂编造参数" | "看似简洁但依据不足" |
 
-**整体结论**：微调后模型（Answer2）比原模型好一些，在更多题目里没犯明显的计算错误。但两个模型都不能直接拿去用，回答必须经过规程原文复核。
+**整体结论**：微调后模型（Answer2）比原模型好一些，在更多题目里没犯明显的计算错误。但**两个模型都不能直接拿去用，回答必须经过规程原文复核**。
 
 > 15 道题逐题评测汇总见 [评测汇总表格](./Evaluation/Evaluation%20Result.md#评测汇总)，完整评测报告见 [Evaluation/Evaluation Result.md](./Evaluation/Evaluation%20Result.md)
 
