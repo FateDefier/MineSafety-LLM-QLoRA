@@ -51,7 +51,7 @@
 | Easy Dataset | QA 数据集生成 | [使用教程](https://zhuanlan.zhihu.com/p/29942660863) |
 | Llama-Factory | 微调框架 | [GitHub](https://github.com/hiyouga/LLaMA-Factory) |
 | AutoDL | 云 GPU 服务器 | [官网](https://www.autodl.com) |
-| SwanLab | 实验追踪 | [实验面板](https://swanlab.cn/@DateDefier/llamafactory/runs) |
+| SwanLab | 实验追踪 | [实验面板](https://swanlab.cn/@DateDefier/llamafactory?utm_source=website_qr&utm_medium=qr_scan) |
 
 ---
 
