@@ -340,11 +340,11 @@ print(tokenizer.decode(outputs[0], skip_special_tokens=True))
 | 工具/平台/up主 | 用途 |
 |-----------|------|
 | [Llama-Factory](https://github.com/hiyouga/LLaMA-Factory) | 微调框架 |
-| [Qwen2.5](https://github.com/QwenLM/Qwen2.5) | 基座模型 |
-| [Easy Dataset](https://zhuanlan.zhihu.com/p/29942660863) | QA 数据集生成 |
-| [SwanLab](https://swanlab.cn/@DateDefier/llamafactory/runs) | 实验追踪 |
+| [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct) | 基座模型 |
+| [Easy Dataset](https://github.com/ConardLi/easy-dataset) | QA 数据集生成 |
+| [SwanLab](https://github.com/SwanHubX/SwanLab) | 实验追踪 |
 | [AutoDL](https://www.autodl.com) | 云 GPU 服务器 |
-| [MinerU](https://mineru.net/OpenSourceTools/Extractor) | PDF 转 Markdown |
+| [MinerU](https://github.com/opendatalab/MinerU) | PDF 转 Markdown |
 | [堂吉诃德拉曼查的英豪](https://www.bilibili.com/video/BV1R6P7eVEtd/?spm_id_from=333.1007.top_right_bar_window_custom_collection.content.click&vd_source=8e1aeae9cf40ce80fc9b6afa0ca069ed) | AutoDL环境配置 |
 | [code秘密花园](https://www.bilibili.com/video/BV1djgRzxEts/?spm_id_from=333.1007.top_right_bar_window_custom_collection.content.click&vd_source=8e1aeae9cf40ce80fc9b6afa0ca069ed) | 模型参数学习及数据处理 |
 
