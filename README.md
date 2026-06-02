@@ -2,13 +2,13 @@
 
 > 用 QLoRA 对 [Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct) 做矿山安全领域微调。
 > 训练数据来自《煤矿安全规程》（2025）和《金属非金属矿山安全规程》（2020）。
-> 框架：[Llama-Factory](https://github.com/hiyouga/LLaMA-Factory) | 实验追踪：[SwanLab](https://swanlab.cn/@DateDefier/llamafactory/runs)
+> 框架：[Llama-Factory](https://github.com/hiyouga/LLaMA-Factory) | 实验追踪：[SwanLab](https://github.com/SwanHubX/SwanLab)
 
 ---
 
 ## 1. 效果展示
 
-微调前后使用 15 道矿山安全领域专业测试题进行对比，由 GPT-5.5 基于规程原文进行盲评：
+微调前后使用 Gemini-3.5-Flahs 根据 Markdown 数据集生成的 15 道矿山安全领域专业测试题进行对比，由 GPT-5.5 基于规程原文进行盲评：
 
 | 维度 | 原模型 (Answer1) | 微调后 (Answer2) |
 |------|-----------------|-----------------|
@@ -26,13 +26,13 @@
 | 风速范围 | 0.15 ~ 6 m/s（笼统套用） | 1.0 ~ 8 m/s（更符合架线电机车巷道规程） |
 | GPT-5.5 评价 | 适用范围混乱，规程数值不准确 | 数值更接近规程表 |
 
-> 详细评估结果见 [Evaluation/](./Evaluation/) 目录，包含 15 道测试题和完整 GPT-5.5 盲评报告。
+> 详细评估问题、回答及结果见 [Evaluation/](./Evaluation/) 目录，包含 15 道测试题和完整 GPT-5.5 盲评报告。
 
 ---
 
 ## 2. 项目概览
 
-- 7265 条 QA 对，经 DeepSeek-R1 自动评分后过滤掉 5.66% 低质量数据
+- 7265 条 QA 对，经 DeepSeek-R1-0528-Qwen3-8B 自动评分后过滤掉 5.66% 低质量数据
 - 4-bit NF4 量化 + LoRA，单张 GPU 训练 1~1.5 小时
 - 训练数据含 `<think>` 推理链
 - 跑了 3 组对比实验（rank 8/16，epoch 2/3），找到最优配置
@@ -62,7 +62,7 @@ QLoRA/
 ├── data/
 │   ├── PDF/              # 原始规程 PDF 文件
 │   ├── Markdown/         # MinerU 转换后的 Markdown 文件
-│   └── JSON/
+│   └── JSON/             # 最终数据
 │       ├── mine_safety_data.json   # 训练数据集（Alpaca 格式）
 │       └── dataset_info.json       # Llama-Factory 数据集注册
 ├── Config and Index/     # 三次实验的配置和训练指标
@@ -75,8 +75,8 @@ QLoRA/
 │   ├── Answer2.md        # 微调后回答
 │   ├── Prompt.md         # GPT-5.5 评测 Prompt
 │   └── Evaluation Result.md  # 完整评测报告
-├── Export/               # 导出的模型权重（.tar）
-├── figure/               # 训练 Loss 曲线图
+├── Export/               # 导出的模型权重（.tar）(文件太大未上传)
+├── figure/               # 训练 Loss 曲线图及流程图
 ├── docs/                 # 学习笔记与参考资料
 │   ├── training-params-guide.md   # 训练参数详解（含 VRAM 估算）
 │   ├── param-reference.md         # 参数快速参考表
@@ -89,14 +89,14 @@ QLoRA/
 
 ## 5. 数据集说明
 
-### 数据来源
+### 5.1 数据来源
 
 | 规程 | 年份 | 链接 |
 |------|------|------|
 | 《金属非金属矿山安全规程》 | 2020 | [原文链接](https://xj.chinamine-safety.gov.cn/web/searchInfo.shtml?infoid=906590871600678) |
 | 《煤矿安全规程》 | 2025 | [原文链接](https://www.mem.gov.cn/gk/zfxxgkpt/fdzdgknr/gz11/202508/P020250804637946571624.pdf) |
 
-### 数据处理流程
+### 5.2 数据处理流程(见 [数据处理](docs/baseline-tutorial.md)))
 
 1. **PDF 转 Markdown**：使用 MinerU 在线平台将两部规程 PDF 转为结构化 Markdown
 2. **QA 自动生成**：使用 Easy Dataset 进行文档分块、问题提取和答案生成
@@ -107,7 +107,7 @@ QLoRA/
 
 > 完整数据集已上传至 Hugging Face：[FateDefier/MineSafety-QA-Dataset](https://huggingface.co/datasets/FateDefier/MineSafety-QA-Dataset)
 
-### 数据格式
+### 5.3 数据格式
 
 Alpaca 格式，包含 `<think>` 推理链：
 
@@ -124,11 +124,11 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 ## 6. 训练配置
 
-### 基座模型
+### 6.1 基座模型
 
 [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct) — 7.6B 参数，28 层 Transformer
 
-### QLoRA 参数
+### 6.2 QLoRA 参数
 
 | 参数 | 值 |
 |------|-----|
@@ -138,7 +138,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 | LoRA dropout | 0.1 |
 | Target modules | q_proj, v_proj, k_proj, o_proj, gate_proj, up_proj, down_proj |
 
-### 训练参数
+### 6.3 训练参数
 
 | 参数 | 值 |
 |------|-----|
@@ -152,7 +152,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 | 随机种子 | 42 |
 | 训练环境 | AutoDL 云 GPU |
 
-### 参数选择分析
+### 6.4 参数选择分析
 
 | 参数 | 选择理由 |
 |------|----------|
@@ -176,7 +176,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 ## 7. 实验结果
 
-### 三组实验对比
+### 7.1 三组实验对比
 
 | 实验 | LoRA Rank | Alpha | Epochs | Eval Loss | 训练时长 | Hugging Face |
 |------|-----------|-------|--------|-----------|---------|-------------|
@@ -186,7 +186,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 **结论**：**Test 2（rank=16, epoch=2）eval loss 最低，训练时间也最短**。跑 3 个 epoch 的两组都出现了过拟合。
 
-### Loss 曲线
+### 7.2 Loss 曲线
 
 | Training Loss | Eval Loss | Gradient Norm |
 |:---:|:---:|:---:|
@@ -200,7 +200,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 > 完整训练指标：[Test 1](Config%20and%20Index/test1-index.csv) | [Test 2](Config%20and%20Index/test2-index.csv) | [Test 3](Config%20and%20Index/test3-index.csv)
 
-### 详细训练指标
+### 7.3 详细训练指标
 
 | Learning Rate | Tokens per Second | Eval Samples/Step | Eval Steps/Second |
 |:---:|:---:|:---:|:---:|
@@ -222,7 +222,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 ## 8. 评估结果
 
-### 测试题设计
+### 8.1 测试题设计
 
 15 道测试题由 **Gemini-3.5-Flash** 根据 Markdown 规程文档自动生成，覆盖 3 个维度：
 
@@ -232,7 +232,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 | 矿山通风与安全规程 | 5 | 领域知识精确度 |
 | 实际生产业务与综合场景 | 5 | 逻辑推理与实际应用 |
 
-### GPT-5.5 盲评结论
+### 8.2 GPT-5.5 盲评结论
 
 评分从规程符合性、准确性、完整性、实用性、表达质量五个维度打分。
 
@@ -252,7 +252,7 @@ Alpaca 格式，包含 `<think>` 推理链：
 
 ## 9. 使用方式
 
-### 环境搭建
+### 9.1 环境搭建
 
 用 Conda 管理环境（依赖列表见 [`requirements.txt`](./requirements.txt)）：
 
@@ -271,7 +271,7 @@ pip install -r requirements.txt
 pip install transformers>=5.6.0 torch peft>=0.18.1 bitsandbytes
 ```
 
-### LoRA Adapter 权重
+### 9.2 LoRA Adapter 权重
 
 三组实验的 LoRA adapter 权重已上传至 Hugging Face：
 
@@ -352,4 +352,4 @@ print(tokenizer.decode(outputs[0], skip_special_tokens=True))
 
 ## 13. 许可证
 
-本项目使用的基座模型 Qwen2.5-7B-Instruct 遵循 [Qwen Research License](https://github.com/QwenLM/Qwen2.5/blob/main/LICENSE)。训练数据来源于国家矿山安全相关法规，仅供研究与学习使用。
+本项目使用的基座模型 Qwen2.5-7B-Instruct 遵循 [Qwen Research License](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/LICENSE)。训练数据来源于国家矿山安全相关法规，仅供研究与学习使用。
