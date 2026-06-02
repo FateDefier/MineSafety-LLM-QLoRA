@@ -42,7 +42,7 @@
 
 ## 3. 方法流程
 
-![方法流程](figure/methodology.png)
+![方法流程](figure/methodology.svg)
 
 **工具链接：**
 | 工具 | 用途 | 链接 |
