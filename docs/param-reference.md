@@ -6,12 +6,12 @@
 
 | 参数 | 含义 | 选择建议 |
 |------|------|----------|
-| `do_train: true` | 执行训练（否则仅推理/评估） | 必须为 `true` |
-| `stage: sft` | 训练阶段：监督微调（SFT） | QLoRA 通常用于 SFT，无需改动 |
-| `finetuning_type: lora` | 微调类型：LoRA | QLoRa 本质是 `lora` + 量化，这里固定 |
 | `model_name_or_path` | 预训练模型路径（本地或 HuggingFace 模型名） | 填写实际路径或官方名称，确保有 `qwen2.5-7b-instruct` |
-| `template: qwen` | 对话模板（用于格式化输入输出） | 必须与模型匹配（如 qwen、llama 3、chatglm 3 等） |
+| `stage: sft` | 训练阶段：监督微调（SFT） | QLoRA 通常用于 SFT，无需改动 |
+| `do_train: true` | 执行训练（否则仅推理/评估） | 必须为 `true` |
+| `finetuning_type: lora` | 微调类型：LoRA | QLoRa 本质是 `lora` + 量化，这里固定 |
 | `trust_remote_code: true` | 允许执行自定义模型代码（如 Qwen 的自定义建模文件） | 非官方 Hub 模型或 Qwen 旧版需要设为 `true`，安全前提 |
+| `template: qwen` | 对话模板（用于格式化输入输出） | 必须与模型匹配（如 qwen、llama 3、chatglm 3 等） |
 | `output_dir` | 保存 checkpoint 和最终模型的目录 | 自定义，建议有空余磁盘空间 |
 | `report_to: none` | 训练日志上报目标（wandb / tensorboard / none） | 测试或不想用外部工具时选 `none`，否则 `tensorboard` 方便本地查看 |
 
@@ -23,10 +23,10 @@
 |------|------|----------|
 | `dataset: mine-safety-data` | 使用的数据集名称（需在 `dataset_info.json` 中定义） | 根据实际任务命名，确保格式符合 SFT 要求（如 instruction / input / output 字段） |
 | `dataset_dir: data` | 数据集存放目录 | 默认 `data` 即可，可修改 |
-| `cutoff_len: 2048` | 输入序列的最大长度（token 数） | 根据显存和任务调整：7 B 模型 + 4-bit + 2048 长度占用约 12~16 GB VRAM；若数据含长文档可增至 4096，但量化后仍可能 OOM |
-| `val_size: 0.1` | 从训练集中分割 10% 作为验证集 | 数据量大时 0.05~0.1 均可；若已有独立验证集则设为 0，并用 `eval_dataset` 指定 |
 | `max_samples: 100000` | 最多使用的样本数（所有数据会随机截取） | 若数据量极大（如百万级），可设较小值加速试验；完整训练时去掉或设很大 |
-| `preprocessing_num_workers: 16` | 数据预处理并行进程数 | 根据 CPU 核心数设置（如 8~16），过多可能 OOM，建议 4~8 大部分情况够用 |
+| `val_size: 0.1` | 从训练集中分割 10% 作为验证集 | 数据量大时 0.05~0.1 均可；若已有独立验证集则设为 0，并用 `eval_dataset` 指定 |
+| `preprocessing_num_workers: 16` | 数据预处理并行进程数 | 根据 CPU 核心数设置（如 8~16），过多可能 OOM(`Out Of Memory`)，建议 4~8 大部分情况够用 |
+| `cutoff_len: 2048` | 输入序列的最大长度（token 数） | 根据显存和任务调整：7 B 模型 + 4-bit + 2048 长度占用约 12~16 GB VRAM；若数据含长文档可增至 4096，但量化后仍可能 OOM |
 | `packing: false` | 是否将多个短样本拼接打包，提高训练效率 | 建议 `false`（传统方式更稳定）；若序列都很短（<256）且想提升速度可开 `true`，但需要框架支持且 loss 计算会忽略 padding |
 
 ---
@@ -46,10 +46,10 @@
 
 | 参数 | 含义 | 选择建议 |
 |------|------|----------|
-| `lora_rank: 16` | LoRA 低秩矩阵的秩 `r` | 常见值 8, 16, 32。**16** 是良好起点，任务复杂可到 32，简单任务 8 即可。秩越大参数量越多，效果上限略高但过拟合风险增加 |
+| `lora_rank: 16` | LoRA 低秩矩阵的秩 `r` | 常见值 8, 16, 32。**16** 是良好起点，任务复杂可到 32，简单任务 8 即可。**秩越大参数量越多，效果上限略高但过拟合风险增加** |
 | `lora_alpha: 32` | LoRA 缩放系数 `α` | 通常设为 `2 × r`（即 32）或 `r` 的一倍多。`α` 越大，LoRA 分支影响越强，可微调时动态调整。32 是稳妥选择 |
-| `lora_dropout: 0.1` | LoRA 层的 dropout 概率 | 小数据集（<1 k）可设 0.1 防过拟合；大数据集可设 0.0；一般 0.05~0.1 |
-| `lora_target` | 要应用 LoRA 的模块名称（线性层） | 对于 Qwen/Llama 系模型，一般包括 `q_proj, v_proj, k_proj, o_proj, gate_proj, up_proj, down_proj`（即所有 attention 和 FFN 投影层）。列全可最大化可训练参数，若显存紧张可只选 `q_proj, v_proj` |
+| `lora_dropout: 0.1` | LoRA 层的 dropout 概率 | 小数据集（<1 k）可设 0.1 **防过拟合**；大数据集可设 0.0；一般 0.05~0.1 |
+| `lora_target` | 要应用 LoRA 的模块名称（线性层） | 对于 Qwen/Llama 系模型，一般包括 `q_proj, v_proj, k_proj, o_proj, gate_proj, up_proj, down_proj`（即**所有 attention 和 FFN 投影层**）。列全可最大化可训练参数，若显存紧张可只选 `q_proj, v_proj` |
 
 ---
 

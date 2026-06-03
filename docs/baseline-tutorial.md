@@ -214,7 +214,7 @@ conda config --add envs_dirs /root/autodl-tmp/conda/envs
 conda create -n llama-factory python=3.11 -y
 ```
 
-> **注意**：一定要初始化 shell 环境，否则后续命令会报错：
+> **注意**：一定要初始化 shell 环境，否则后续命令会报错（**我的教训😭**）：
 
 ```bash
 conda init
@@ -251,7 +251,7 @@ export HF_ENDPOINT=https://hf-mirror.com   # 国内镜像加速
 export HF_HOME=/root/autodl-tmp/Hugging-Face
 
 pip install -U huggingface_hub
-hf download Qwen/Qwen2.5-7B-Instruct
+hf download Qwen/Qwen2.5-7B-Instruct # 新版本使用 hf 命令，与视频教程不同
 ```
 
 ---
@@ -261,24 +261,24 @@ hf download Qwen/Qwen2.5-7B-Instruct
 ```bash
 conda activate llama-factory
 llamafactory-cli webui
-# 若报错，改用：python -m llamafactory.cli webui
+# 若报错，改用：python -m llamafactory.cli webui（我的教训😭）
 ```
 
-在 webui 中加载模型路径后进行对话测试，记录原始模型的回答作为微调前基线。
+在 webui 中加载模型路径后进行对话测试，记录原始模型的回答作为微调前基线。**模型路径** 如下图：
 
 ![模型路径](images/模型路径.png)
 
-测试问题由 Gemini 3.5 Flash 根据数据集生成，共 20 个问题，用于之后进行原模型与微调后模型的对比。
+测试问题由 Gemini 3.5 Flash 根据数据集生成，共 15 个问题，用于之后进行原模型与微调后模型的对比。
 
 ---
 
 ## 5. 训练参数与开始训练
 
-### 训练参数（webui 界面）
+### 训练参数（webui 界面，见 [训练参数含义](training-params-guide.md)，来源于大佬 [code秘密花园](https://www.bilibili.com/video/BV1djgRzxEts/?spm_id_from=333.1007.top_right_bar_window_custom_collection.content.click&vd_source=8e1aeae9cf40ce80fc9b6afa0ca069ed)）
 
 ![训练参数](images/训练参数.png)
 
-### 配置文件（train.yaml）
+### 配置文件（train.yaml，详细含义见 [配置文件参数含义](param-reference.md)）
 
 ```yaml
 # === 基本配置 ===
@@ -344,7 +344,7 @@ ddp_timeout: 180000000
 | `lora_alpha` | 32 | LoRA 缩放系数，一般为 rank 的 2 倍 |
 | `learning_rate` | 0.0002 | LoRA 微调常用学习率 |
 | `cutoff_len` | 2048 | 与数据集最大分割长度匹配 |
-| `num_train_epochs` | 3.0 | 建议 2-3，本项目观察到 3 epoch 有轻微过拟合 |
+| `num_train_epochs` | 3.0 | 建议 2-3，本项目观察到 3 epoch 有 **过拟合** |
 
 ---
 
@@ -370,7 +370,7 @@ ddp_timeout: 180000000
 
 **训练集损失**：从 ~1.6 持续下降至 ~0.5，整体学习趋势良好。在 Epoch 切换点（Step ~850、~1700）出现阶梯状下降，与数据集重新 Shuffle 相关。
 
-**验证集损失**：前两个 Epoch 同步下降至 ~0.86（最优），但进入第三个 Epoch 后**反弹至 ~0.9175**，出现轻微过拟合。
+**验证集损失**：前两个 Epoch 同步下降至 ~0.86（最优），但进入第三个 Epoch 后**反弹至 ~0.9175**，出现 **过拟合**。
 
 **结论**：模型在第 3 个 Epoch 发生了轻微过拟合，**最理想的停止点在第二个 Epoch 结束（约 Step 1700）**。对这个数据集而言，跑 3 个 Epoch 太多，最终输出的 Epoch 3 模型泛化能力反而不如 Epoch 2 的中间权重。
 
@@ -414,7 +414,11 @@ mkdir -p Models/Qwen2.5-7B-Instruct-merged
 
 **测试问题**：在深度 800 米的煤矿中，设计一条双轨矿山运输巷道时，确定断面尺寸（净宽、净高）的核心依据和标准步骤是什么？
 
-经 Gemini 3.5 Flash 以矿山安全专家身份评估，两个回答均偏宽泛，但微调后的回答（回答二）在逻辑框架上略好——步骤从需求分析→初步设计→安全性评估→施工图设计，更贴合工程实际；而微调前的回答偏向项目管理/行政管理视角。不过两者均缺乏深井围岩应力、风速校验等硬核技术参数，差距并不显著。
+**Gemini 3.5 Flash 以矿山安全专家身份(提示词设定)评估**：两个回答均偏宽泛，但微调后的回答（回答二）在逻辑框架上略好——步骤从需求分析→初步设计→安全性评估→施工图设计，更贴合工程实际；而微调前的回答偏向项目管理/行政管理视角。不过两者均缺乏深井围岩应力、风速校验等硬核技术参数，差距并不显著。
+
+**个人评估**：
+
+> **说实话我看不出二者的太大差别，看来在这种比较宽泛的问题上差别并不明显。**
 
 参考 DeepSeek-v4-Pro 对该问题的专业回答：
 
@@ -427,7 +431,7 @@ mkdir -p Models/Qwen2.5-7B-Instruct-merged
 | 工具 | 用途 | 链接 |
 |------|------|------|
 | MinerU | PDF 转 Markdown | [在线平台](https://mineru.net/OpenSourceTools/Extractor) |
-| Easy Dataset | QA 数据集生成 | [使用教程](https://zhuanlan.zhihu.com/p/29942660863) |
+| Easy Dataset | QA 数据集生成 | [使用教程](https://zhuanlan.zhihu.com/p/29942660863) 及 [下载](https://github.com/ConardLi/easy-dataset) |
 | LLaMA Factory | 微调框架 | [GitHub](https://github.com/hiyouga/LlamaFactory) |
 | AutoDL | 云 GPU 服务器 | [官网](https://www.autodl.com) |
 | FileZilla | 文件传输 | [下载](https://filezilla-project.org/download.php?type=client) |
@@ -436,4 +440,4 @@ mkdir -p Models/Qwen2.5-7B-Instruct-merged
 
 ## License
 
-本项目使用的基座模型 Qwen2.5-7B-Instruct 遵循 [Qwen Research License](https://github.com/QwenLM/Qwen2.5/blob/main/LICENSE)。训练数据来源于国家矿山安全相关法规，仅供研究与学习使用。
+本项目使用的基座模型 Qwen2.5-7B-Instruct 遵循 [Qwen2.5-7B-Instruct License](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/LICENSE)。训练数据来源于国家矿山安全相关法规，仅供研究与学习使用。
