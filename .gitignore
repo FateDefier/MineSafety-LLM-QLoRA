@@ -16,3 +16,6 @@ Thumbs.db
 
 # SwanLab
 .swanlab/
+AGENTS.md
+CLAUDE.md
+.idea/
