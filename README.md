@@ -14,7 +14,7 @@
 
 | 论文 | 笔记 | 核心内容 |
 |------|------|---------|
-| [Attention Is All You Need](docs/papers/Attention%20Is%20All%20You%20Need%20及手写笔记.pdf) (Vaswani et al., 2017) | [Transformer 笔记](docs/notes/1.%20Transformer.md) | 四类基础架构对比、注意力机制（自注意力/多头/交叉）、编码器与解码器、LayerNorm、位置编码、Dropout |
+| [Attention Is All You Need](docs/papers/Attention%20Is%20All%20You%20Need%20及手写笔记.pdf) (Vaswani et al., 2017) | [Transformer 笔记](docs/notes/1.%20Transformer.md) | 四类基础架构对比、注意力机制（自注意力/多头/交叉）、编码器与解码器、LayerNorm、位置编码、Dropout、FFN |
 | [LoRA](docs/papers/LoRA%20Low-Rank%20Adaptation%20of%20Large%20Language%20Models%20及手写笔记.pdf) (Hu et al., 2021) | [LoRA 笔记](docs/notes/2.%20LoRA.md) | 低秩分解与内在维度、熵/交叉熵/KL 散度推导、Adam/AdamW 优化器、SVD 分析、ΔW 特征放大效应、与其他 PEFT 对比 |
 | [QLoRA](docs/papers/QLoRA%20Efficient%20Finetuning%20of%20Quantized%20LLMs%20及手写笔记.pdf) (Dettmers et al., 2023) | [QLoRA 笔记](docs/notes/3.%20QLoRA.md) | 量化与反量化公式、分块量化、NF4 分位数构造、双重量化显存计算、前向传播公式 |
 
@@ -65,8 +65,8 @@
 - **理解 Target modules 的含义**：本项目将 LoRA 施加于 `q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj` 共 7 个模块。其中前 4 个对应 Transformer 多头注意力中的 $W^Q, W^K, W^V, W^O$ 线性投影层，后 3 个对应 Position-wise FFN 中的门控投影和上下投影。不理解 Transformer 架构就无法理解这些参数的含义。
 - **Qwen2.5-7B-Instruct 的架构**：基座模型是 28 层 Transformer 解码器（decoder-only），隐藏维度 $d_{\text{model}}=3584$，28 个注意力头，每头维度 $d_k = d_v = 3584/28 = 128$。理解这个架构才能估算 LoRA 适配器的参数量和显存占用。
 - **解码器自回归生成**：Qwen2.5 使用带掩码的自注意力，每个 token 只能看到当前位置及之前的内容（因果掩码）。这决定了模型的生成方式——逐 token 预测，也决定了训练数据需要 `<think>` 推理链格式。
-- **FFN 的门控机制**：Qwen2.5 的 FFN 使用 SwiGLU 门控结构（gate_proj × up_proj → 激活 → down_proj），而非原始 Transformer 的两层 FFN + ReLU。本项目对这三个投影层都施加了 LoRA，覆盖了 FFN 的全部参数。
-- **Cutoff length=2048 与序列长度**：Transformer 的自注意力计算量与序列长度的平方成正比。本项目设 cutoff=2048，与数据集最大分块长度对齐，同时控制显存消耗（每增 1K token 约 +2.5GB 激活值显存）。
+- **FFN 的门控机制**：Qwen2.5 的 FFN 使用 SwiGLU 门控结构（`gate_proj` × `up_proj` → 激活 → `down_proj`），而非原始 Transformer 的两层 FFN + ReLU。本项目对这三个投影层都施加了 LoRA，覆盖了 FFN 的全部参数。
+- **Cutoff length=2048 与序列长度**：Transformer 的自注意力计算量与序列长度的平方成正比（**复杂度：$O(n^2d)$**）。本项目设 cutoff=2048，与数据集最大分块长度对齐，同时控制显存消耗（每增 1K token 约 +2.5GB 激活值显存）。
 - **位置编码**：Qwen2.5 使用 RoPE（旋转位置编码）而非原始 Transformer 的正弦/余弦位置编码，支持更长的上下文窗口。理解位置编码机制有助于理解模型对长文本的处理能力。
 - **LayerNorm 与残差连接**：Transformer 的每个子层（注意力、FFN）都有残差连接和 LayerNorm，这使得 28 层深网络能够稳定训练。LoRA 适配器的输出通过残差路径与原始权重的输出相加，不破坏原有的信息流。
 
@@ -76,14 +76,14 @@
 
 **指导作用**：
 
-- **rank 参数选择（r=16）**：LoRA 的核心假设是"内在维度"——预训练模型针对下游任务的有效更新集中在一个低维子空间中。论文实验表明 r=1 在 {W_q, W_v} 上已具备竞争力，r=64 并未显著优于 r=4。本项目从 r=8 开始实验，三组对比（r=8/16, epoch=2/3）发现 **r=16 + epoch=2 拿到了最低 eval loss（0.8679）**，说明矿山安全领域需要比论文默认值更高的秩来捕获专业特征。
-- **alpha = 2 × rank（32）**：训练时 ΔW 乘以 α/r，因此 α 和 r 的比值等效于控制 LoRA 分支的学习率。论文指出调整 α 大致等同于调整学习率。本项目设 α=32，使 α/r=2 为常数，这是社区广泛采用的经验值。
-- **Target modules 覆盖所有线性层（7 个）**：默认只加 q_proj/v_proj，但 LoRA 论文实验表明"分散优于集中"——同时适应多个权重矩阵比集中增加单矩阵秩更有效。本项目加上 k_proj/o_proj/gate_proj/up_proj/down_proj，覆盖所有线性层。
+- **rank 参数选择（$r=16$）**：LoRA 的核心假设是"内在维度"——预训练模型针对下游任务的有效更新集中在一个低维子空间中。论文实验表明 $r=1$ 在 $\{W_q, W_v\}$ 上已具备竞争力，$r=64$ 并未显著优于 $r=4$。本项目对比 epoch=3 的两组实验 test1（rank=16）和 test3（rank=8），说明矿山安全领域需要比论文默认值更高的秩来捕获专业特征。
+- **$\alpha = 2 \times r$（32）**：训练时 $\Delta W$ 乘以 $\frac{\alpha}{r}$，因此 $\alpha$ 和 $r$ 的比值等效于控制 LoRA 分支的学习率。论文指出调整 $\alpha$ 大致等同于调整学习率（**梯度更新公式中学习率和缩放因子 $\frac{\alpha}{r}$ 直接乘在一起**）。本项目设 $\alpha=32$，使 $\frac{\alpha}{r}=2$ 为常数，这是社区广泛采用的经验值。
+- **Target modules 覆盖所有线性层（7 个）**：默认只加 `q_proj`/`v_proj`，但 LoRA 论文实验表明"分散优于集中"——同时适应多个权重矩阵比集中增加单矩阵秩更有效。本项目加上 `k_proj`/`o_proj`/`gate_proj`/`up_proj`/`down_proj`，覆盖所有线性层。
 - **Dropout=0.1 防过拟合**：LoRA 适配器的 dropout 防止小数据集过拟合，配合 AdamW 的 weight decay 一起起作用。
-- **学习率 2e-4**：LoRA 只更新低秩适配器（不改原始权重），比全参数微调需要更大学习率。全参数微调通常小一个数量级（如 2e-5）。
+- **学习率 $2 \times 10^{-4}$**：LoRA 只更新低秩适配器（不改原始权重），比全参数微调需要更大学习率。全参数微调通常小一个数量级（如 $2 \times 10^{-5}$）。
 - **AdamW 优化器**：LoRA 论文中使用 AdamW，其 weight decay 解耦修正使权重衰减不受自适应学习率影响，泛化更好。
-- **零推理延迟**：部署时可将 ΔW=BA 直接合并到 W_0 中（W = W_0 + BA），不增加任何额外计算，这是 LoRA 相比 Adaptor 和 Prefix Tuning 的关键优势。
-- **SVD 分析验证**：论文通过 SVD 发现 ΔW 并非随机扰动，而是放大了 W 中已存在但未被强调的任务特定方向（r=4 时放大因子高达 21.5 倍），验证了低秩适应的充分性。
+- **零推理延迟**：部署时可将 $\Delta W = BA$ 直接合并到 $W_0$ 中（$W = W_0 + BA$），不增加任何额外计算，这是 LoRA 相比 Adaptor 和 Prefix Tuning 的关键优势。
+- **SVD 分析验证**：论文通过 SVD 发现 $\Delta W$ 并非随机扰动，而是放大了 $W$ 中已存在但未被强调的任务特定方向（$r=4$ 时放大因子高达 21.5 倍），验证了低秩适应的充分性。
 
 ### 3.3 QLoRA：为什么能单卡微调 7B 模型？
 
@@ -92,12 +92,12 @@
 **指导作用**：
 
 - **4-bit NF4 量化实现单卡训练**：本项目使用 RTX 4090（24GB）微调 7.6B 参数的 Qwen2.5。QLoRA 论文提出的 NF4 量化格式将模型权重从 FP16 压缩到 4-bit，使显存从约 14GB（仅模型权重）降至约 3.5GB，腾出空间给 LoRA 适配器和激活值。没有 QLoRA 的量化技术，单卡 4090 无法完成 7B 模型的微调。
-- **双重量化进一步压缩显存**：分块量化每 block 需要一个 FP32 的缩放因子 c₂，双重量化对 c₂ 本身再做 8-bit 量化，从 4.500 降至 4.127 bits/param，节省 0.373 bits/param。本项目配置中启用了双重量化。
+- **双重量化进一步压缩显存**：分块量化每 block 需要一个 FP32 的缩放因子 $c_2$，双重量化对 $c_2$ 本身再做 8-bit 量化，从 4.500 降至 4.127 bits/param，节省 0.373 bits/param。本项目配置中启用了双重量化。
 - **4-bit 存储 + FP16 计算的前向传播**：基模型权重以 4-bit NF4 驻留显存，仅在前向/反向传播时反量化为 BFloat16 参与计算（公式 5）。本项目设 bf16=True，利用 4090 的 Ampere 架构支持。
 - **Target modules 全覆盖**：QLoRA 论文实验表明，对所有线性层施加 LoRA 比只加 attention 投影效果更好，且 rank 可以更低。本项目据此覆盖了全部 7 个线性层。
 - **分块大小 blocksize=64**：QLoRA 论文建议每 64 个参数为一个量化块，避免极端值污染整个张量的量化精度。本项目使用默认的 blocksize=64。
-- **NF4 的信息论最优性**：NF4 针对正态分布权重设计，取 N(0,1) 的 17 个分位数构造 16 个量化值，确保每个量化区间内的数据量相等，比普通 INT4 保留更多精度。
-- **Epoch=2 提前停止**：三组实验中 Test 1 和 Test 3 都在第 3 个 epoch 出现 eval loss 反弹（~0.86 → ~0.92），过拟合信号明显。Test 2 在 epoch=2 停下来，loss 最低（0.8679），训练时间也最短（~64 min）。这验证了小数据集不宜训练过多轮次。
+- **NF4 的信息论最优性**：NF4 针对正态分布权重设计，取 $\mathcal{N}(0,1)$ 的 $2^4+1=17$ 个分位数构造 16 个量化值，确保每个量化区间内的数据量相等，比普通 INT4 保留更多精度。
+- **Epoch=2 提前停止**：三组实验中 Test 1 和 Test 3 都在第 3 个 epoch 出现 eval loss 反弹（$\sim 0.86 \to \sim 0.92$），过拟合信号明显。Test 2 在 epoch=2 停下来，loss 最低（0.8679），训练时间也最短（$\sim$64 min）。这验证了小数据集不宜训练过多轮次。
 
 ## 4. 方法流程
 
